@@ -1,11 +1,12 @@
 import streamDeck from "@elgato/streamdeck";
 
 import { StatusTileAction } from "./actions/status-tile-action";
+import { createTaskNavigator } from "./navigation";
 import { StatusCoordinator } from "./status/coordinator";
 
 streamDeck.logger.setLevel("info");
 
-const action = new StatusTileAction();
+const action = new StatusTileAction(createTaskNavigator());
 streamDeck.actions.registerAction(action);
 
 await streamDeck.connect();

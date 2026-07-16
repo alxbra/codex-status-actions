@@ -15,23 +15,16 @@ import type { JsonValue } from "@elgato/utils";
 
 import { assignInOrder, type TilePosition } from "../assignment";
 import { ACTION_UUID, DOUBLE_TAP_MS } from "../constants";
-import { activateCodexAndOpenTask, isCodexForeground, openTaskInBackground } from "../navigation";
 import { renderEmptyTile, renderIntegrationError, renderStatusTile } from "../render";
 import type { StatusCoordinator } from "../status/coordinator";
-import type { PropertyInspectorCommand, ThreadStatusSnapshot } from "../types";
+import { isDoubleTap, type Tap } from "../tap";
+import type { PropertyInspectorCommand, TaskNavigator, ThreadStatusSnapshot } from "../types";
 import { toErrorMessage } from "../util";
 
 type ActionSettings = Record<string, never>;
 
 interface PressCapture {
   threadId?: string;
-  foreground: Promise<boolean>;
-}
-
-interface PreviousTap {
-  at: number;
-  threadId: string;
-  wasForeground: boolean;
 }
 
 @action({ UUID: ACTION_UUID })
@@ -43,10 +36,14 @@ export class StatusTileAction extends SingletonAction<ActionSettings> {
   private readonly renderedThreads = new Map<string, ThreadStatusSnapshot>();
   private readonly renderedImages = new Map<string, string>();
   private readonly presses = new Map<string, PressCapture>();
-  private readonly previousTaps = new Map<string, PreviousTap>();
+  private readonly previousTaps = new Map<string, Tap>();
   private inspectorContextId: string | undefined;
   private renderRequested = false;
   private renderInProgress = false;
+
+  constructor(private readonly navigator: TaskNavigator) {
+    super();
+  }
 
   attach(coordinator: StatusCoordinator): void {
     this.unsubscribe?.();
@@ -85,8 +82,7 @@ export class StatusTileAction extends SingletonAction<ActionSettings> {
   override onKeyDown(event: KeyDownEvent<ActionSettings>): void {
     const thread = this.renderedThreads.get(event.action.id);
     this.presses.set(event.action.id, {
-      ...(thread ? { threadId: thread.thread.id } : {}),
-      foreground: isCodexForeground()
+      ...(thread ? { threadId: thread.thread.id } : {})
     });
   }
 
@@ -95,35 +91,32 @@ export class StatusTileAction extends SingletonAction<ActionSettings> {
     const capture = this.presses.get(contextId);
     this.presses.delete(contextId);
     if (this.coordinator?.navigationDisabled) {
+      this.previousTaps.delete(contextId);
       await event.action.showAlert();
       return;
     }
     const threadId = capture?.threadId;
     if (!threadId) {
+      this.previousTaps.delete(contextId);
       await event.action.showAlert();
       return;
     }
 
-    const wasForeground = await capture.foreground;
-    const now = Date.now();
+    const tap = { at: Date.now(), threadId };
     const previous = this.previousTaps.get(contextId);
-    const isSecondTap =
-      previous &&
-      previous.threadId === threadId &&
-      now - previous.at <= DOUBLE_TAP_MS &&
-      !previous.wasForeground;
 
     try {
+      const isSecondTap = isDoubleTap(previous, tap, DOUBLE_TAP_MS);
       if (isSecondTap) {
         this.previousTaps.delete(contextId);
-        await activateCodexAndOpenTask(threadId);
       } else {
-        this.previousTaps.set(contextId, { at: now, threadId, wasForeground });
-        await openTaskInBackground(threadId);
+        this.previousTaps.set(contextId, tap);
       }
+      await this.navigator.selectTask(threadId, isSecondTap ? "foreground" : "background");
       this.coordinator?.acknowledge(threadId);
       this.coordinator?.markNavigation(true);
     } catch (error) {
+      if (this.previousTaps.get(contextId) === tap) this.previousTaps.delete(contextId);
       this.coordinator?.markNavigation(false, toErrorMessage(error));
       await event.action.showAlert();
     }

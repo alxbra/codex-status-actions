@@ -93,7 +93,7 @@ export class HookManager {
   }
 
   async listOwned(cwd: string): Promise<HookMetadata[]> {
-    return this.appServer.listHooks(cwd, this.helperPath);
+    return this.appServer.listHooks(cwd, this.command);
   }
 
   async status(cwd: string): Promise<{ status: HookTrustStatus; count: number }> {
