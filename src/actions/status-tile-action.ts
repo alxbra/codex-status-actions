@@ -183,23 +183,28 @@ export class StatusTileAction extends SingletonAction<ActionSettings> {
   private async renderAll(): Promise<void> {
     const coordinator = this.coordinator;
     const assignments = assignMostRecent(this.positions.values(), coordinator?.snapshot().values() ?? []);
-    this.renderedThreads.clear();
 
     const results = await Promise.allSettled(
       [...this.visibleActions].map(async ([contextId, key]) => {
         const { rank = 1, snapshot } = assignments.get(contextId) ?? {};
+        let renderedSnapshot: ThreadStatusSnapshot | undefined;
         let image: string;
         if (coordinator?.unavailable) {
           image = renderIntegrationError(rank);
         } else if (snapshot) {
-          this.renderedThreads.set(contextId, snapshot);
+          renderedSnapshot = snapshot;
           image = renderStatusTile(snapshot.state, snapshot.thread.title, rank);
         } else {
           image = renderEmptyTile(rank);
         }
-        if (this.renderedImages.get(contextId) === image) return;
+        if (this.renderedImages.get(contextId) === image) {
+          this.setRenderedThread(contextId, renderedSnapshot);
+          return;
+        }
         await key.setImage(image);
+        if (!this.visibleActions.has(contextId)) return;
         this.renderedImages.set(contextId, image);
+        this.setRenderedThread(contextId, renderedSnapshot);
       })
     );
     const failures = results.filter(
@@ -208,6 +213,11 @@ export class StatusTileAction extends SingletonAction<ActionSettings> {
     if (failures.length > 0) {
       throw new Error(`Failed to render ${String(failures.length)} tile${failures.length === 1 ? "" : "s"}`);
     }
+  }
+
+  private setRenderedThread(contextId: string, snapshot?: ThreadStatusSnapshot): void {
+    if (snapshot) this.renderedThreads.set(contextId, snapshot);
+    else this.renderedThreads.delete(contextId);
   }
 
   private requestRender(): void {
