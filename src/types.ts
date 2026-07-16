@@ -2,6 +2,12 @@ import type { JsonObject } from "@elgato/utils";
 
 export type ThreadVisualState = "idle" | "unread" | "working" | "needs-user" | "error";
 
+export type TaskNavigationMode = "background" | "foreground";
+
+export interface TaskNavigator {
+  selectTask(threadId: string, mode: TaskNavigationMode): Promise<void>;
+}
+
 export interface ThreadRecord {
   id: string;
   title: string;

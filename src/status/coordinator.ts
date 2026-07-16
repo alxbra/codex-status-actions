@@ -216,7 +216,6 @@ export class StatusCoordinator {
       });
     }
     await this.persistNow();
-    this.emitChange();
   }
 
   async setCodexHome(codexHome?: string): Promise<void> {
@@ -357,7 +356,6 @@ export class StatusCoordinator {
       this.settings = { ...this.settings, threadOrder };
       if (!sameOrder(previousOrder, threadOrder)) this.schedulePersist();
       this.updateHealth({ catalog: "connected" });
-      this.emitChange();
     } catch {
       this.updateHealth({ catalog: "disconnected", message: "Task catalog refresh failed" });
     }

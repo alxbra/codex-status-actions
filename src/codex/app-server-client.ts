@@ -128,12 +128,10 @@ export class AppServerClient extends EventEmitter {
     return records;
   }
 
-  async listHooks(cwd: string, ownedCommandPath: string): Promise<HookMetadata[]> {
+  async listHooks(cwd: string, ownedCommand: string): Promise<HookMetadata[]> {
     await this.start();
     const result = hooksListSchema.parse(await this.request("hooks/list", { cwds: [cwd] }));
-    return result.data
-      .flatMap((entry) => entry.hooks)
-      .filter((hook) => hook.command?.includes(ownedCommandPath));
+    return result.data.flatMap((entry) => entry.hooks).filter((hook) => hook.command === ownedCommand);
   }
 
   async writeHookStates(

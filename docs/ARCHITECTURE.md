@@ -46,7 +46,9 @@ Each key receives a minimal 144×144 SVG data URI containing only its state colo
 
 ### Navigation
 
-Task IDs are UUID-validated before they enter a URL. Processes are launched with argument arrays, never interpolated shell commands. `lsappinfo` detects the frontmost bundle without requesting Accessibility or Automation permissions.
+The status action depends only on the OS-neutral `TaskNavigator` interface and requests `background` or `foreground` task selection. A platform factory currently selects `MacOsTaskNavigator`; unsupported platforms fail explicitly until their adapter is added.
+
+The macOS adapter UUID-validates task links and launches `/usr/bin/open` with argument arrays, never interpolated shell commands. A first tap requests background navigation with `open -g`; Codex may still activate itself while handling the deep link. A matching second tap within 500 ms deliberately activates the Codex bundle before opening the task again. The plugin does not restore another application's focus, and neither path requires Accessibility or Automation permissions.
 
 ## Persistence
 
@@ -62,4 +64,4 @@ No task transcript, prompt, command, question, or tool payload is persisted by t
 
 ## Replaceable boundaries
 
-The status coordinator keeps task catalog, rollout, hooks, rendering, and navigation separate. Future assignment modes or a shared live app-server transport can replace their respective adapters without changing the action manifest.
+The status coordinator keeps task catalog, rollout, hooks, rendering, and navigation separate. Future assignment modes, a shared live app-server transport, or Windows/Linux task navigators can replace their respective adapters without changing the action manifest.

@@ -45,11 +45,10 @@ The plugin works without trusted hooks, but approval and question waits may rema
 
 ## Key presses
 
-- **Single tap:** switch to the represented task and acknowledge its green unread state after successful navigation.
-- **First tap while Codex is in the background:** preselect and acknowledge the task without stealing focus.
-- **Second tap within 500 ms:** activate Codex and select the task again.
+- **Single tap:** request background selection and acknowledge the represented task.
+- **Second tap within 500 ms:** activate Codex and select the same task again.
 
-Navigation uses the version-checked `codex://threads/<thread-id>` URL and macOS `open`. It does not use screen coordinates, Accessibility, AppleScript, or simulated keyboard input.
+Navigation uses the version-checked `codex://threads/<thread-id>` URL and macOS `open`. Codex may still activate itself while handling a single-tap deep link despite the background flag. The plugin does not restore focus, use screen coordinates, request Accessibility access, run AppleScript, or simulate keyboard input.
 
 ## Privacy and security
 

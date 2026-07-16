@@ -23,7 +23,7 @@ describe("app-server client", () => {
         updatedAt: 2_000
       })
     ]);
-    const hooks = await client.listHooks("/tmp", "/tmp/hook-forwarder.sh");
+    const hooks = await client.listHooks("/tmp", "/bin/sh /tmp/hook-forwarder.sh");
     expect(hooks).toEqual([
       expect.objectContaining({ trustStatus: "untrusted", currentHash: "sha256:test" })
     ]);
@@ -70,7 +70,7 @@ while IFS= read -r line; do
   case "$line" in
     *'"method":"initialize"'*) printf '{"id":%s,"result":{"userAgent":"fake"}}\\n' "$id" ;;
     *'"method":"thread/list"'*) printf '{"id":%s,"result":{"data":[{"id":"019f6b6d-644d-7701-8858-9da6837aaaaa","parentThreadId":null,"preview":"Preview","ephemeral":false,"updatedAt":1,"recencyAt":2,"cwd":"/tmp/project","name":"Fake task"}],"nextCursor":null}}\\n' "$id" ;;
-    *'"method":"hooks/list"'*) printf '{"id":%s,"result":{"data":[{"hooks":[{"key":"hook-key","command":"/bin/sh /tmp/hook-forwarder.sh","enabled":true,"currentHash":"sha256:test","trustStatus":"untrusted"}]}]}}\\n' "$id" ;;
+    *'"method":"hooks/list"'*) printf '{"id":%s,"result":{"data":[{"hooks":[{"key":"hook-key","command":"/bin/sh /tmp/hook-forwarder.sh","enabled":true,"currentHash":"sha256:test","trustStatus":"untrusted"},{"key":"other-hook","command":"/bin/sh /tmp/hook-forwarder.sh.backup","enabled":true,"currentHash":"sha256:other","trustStatus":"untrusted"}]}]}}\\n' "$id" ;;
     *'"method":"config/batchWrite"'*) printf '{"id":%s,"result":{}}\\n' "$id" ;;
   esac
 done
