@@ -185,7 +185,7 @@ export class StatusTileAction extends SingletonAction<ActionSettings> {
     const assignments = assignMostRecent(this.positions.values(), coordinator?.snapshot().values() ?? []);
     this.renderedThreads.clear();
 
-    await Promise.all(
+    const results = await Promise.allSettled(
       [...this.visibleActions].map(async ([contextId, key]) => {
         const { rank = 1, snapshot } = assignments.get(contextId) ?? {};
         let image: string;
@@ -202,6 +202,12 @@ export class StatusTileAction extends SingletonAction<ActionSettings> {
         this.renderedImages.set(contextId, image);
       })
     );
+    const failures = results.filter(
+      (result): result is PromiseRejectedResult => result.status === "rejected"
+    );
+    if (failures.length > 0) {
+      throw new Error(`Failed to render ${String(failures.length)} tile${failures.length === 1 ? "" : "s"}`);
+    }
   }
 
   private requestRender(): void {
