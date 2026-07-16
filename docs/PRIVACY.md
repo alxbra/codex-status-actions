@@ -31,6 +31,6 @@ The hook socket and helper live under `$CODEX_HOME/codex-status-actions`. The di
 
 ## Diagnostics
 
-“Copy Safe Diagnostics” includes plugin/platform versions, configured Codex home, connection states, task count, hook count, and whether enhanced status is enabled. It excludes task IDs, rollout paths, transcripts, and event content.
+“Copy Safe Diagnostics” includes plugin/platform versions, whether a custom Codex home is configured, connection states, task count, hook count, and whether enhanced status is enabled. It excludes filesystem paths, task IDs, rollout paths, transcripts, and event content.
 
 Raw app-server stderr is drained but never copied into plugin logs; only a content-free diagnostic marker is emitted.

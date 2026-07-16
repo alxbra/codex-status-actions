@@ -20,6 +20,10 @@ describe("status coordinator settings", () => {
       enhancedStatusEnabled: false,
       codexHome: "/tmp/codex-home"
     });
+
+    const diagnostics = coordinator.diagnostics();
+    expect(JSON.parse(diagnostics)).toMatchObject({ customCodexHomeConfigured: true });
+    expect(diagnostics).not.toContain("/tmp/codex-home");
   });
 
   it("falls back to safe defaults for malformed settings", () => {
