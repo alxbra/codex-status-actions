@@ -1,5 +1,7 @@
 import path from "node:path";
 
+import { z } from "zod";
+
 import { AppServerClient } from "../codex/app-server-client";
 import { RolloutWatcher, type ParsedRolloutEvent } from "../codex/rollout-watcher";
 import { CATALOG_REFRESH_MS, DEFAULT_SETTINGS, PLUGIN_VERSION } from "../constants";
@@ -25,9 +27,36 @@ import {
 
 type PersistSettings = (settings: GlobalSettings) => Promise<void>;
 
-export class StatusCoordinator {
-  private settings: GlobalSettings;
-  private health: HealthSnapshot = {
+const persistedThreadStateSchema = z.object({
+  lastCompletionId: z.string().optional(),
+  lastAcknowledgedCompletionId: z.string().optional(),
+  error: z.boolean().optional(),
+  changedAt: z.number().nonnegative().optional()
+});
+
+const rolloutCursorSchema = z
+  .union([
+    z.number().int().nonnegative(),
+    z.object({
+      offset: z.number().int().nonnegative(),
+      identity: z
+        .string()
+        .regex(/^\d+:\d+$/)
+        .optional()
+    })
+  ])
+  .transform((cursor) => (typeof cursor === "number" ? { offset: cursor } : cursor));
+
+const settingsSchema = z.object({
+  enhancedStatusEnabled: z.boolean().optional(),
+  codexHome: z.string().optional(),
+  initialized: z.boolean().optional(),
+  threadStates: z.record(z.string(), persistedThreadStateSchema).optional(),
+  rolloutOffsets: z.record(z.string(), rolloutCursorSchema).optional()
+});
+
+function initialHealth(): HealthSnapshot {
+  return {
     codexBinary: "checking",
     catalog: "connecting",
     rolloutWatcher: "starting",
@@ -35,6 +64,11 @@ export class StatusCoordinator {
     navigation: "unchecked",
     restartRequired: false
   };
+}
+
+export class StatusCoordinator {
+  private settings: GlobalSettings;
+  private health = initialHealth();
   private readonly threads = new Map<string, ThreadRecord>();
   private readonly runtime = new Map<string, ThreadRuntimeState>();
   private readonly listeners = new Set<() => void>();
@@ -48,7 +82,7 @@ export class StatusCoordinator {
   private started = false;
 
   constructor(
-    initialSettings: Partial<GlobalSettings>,
+    initialSettings: unknown,
     private readonly persistSettings: PersistSettings,
     private readonly log: (message: string) => void
   ) {
@@ -59,12 +93,17 @@ export class StatusCoordinator {
     return resolveCodexHome(this.settings);
   }
 
-  get currentHealth(): Readonly<HealthSnapshot> {
-    return this.health;
+  get unavailable(): boolean {
+    return (
+      this.health.codexBinary === "missing" ||
+      this.health.catalog === "disconnected" ||
+      this.health.rolloutWatcher === "error" ||
+      this.navigationDisabled
+    );
   }
 
-  get unavailable(): boolean {
-    return this.health.codexBinary === "missing" || this.health.catalog === "disconnected";
+  get navigationDisabled(): boolean {
+    return this.health.navigation === "error";
   }
 
   async start(): Promise<void> {
@@ -113,10 +152,11 @@ export class StatusCoordinator {
   propertySnapshot(): PropertyInspectorSnapshot {
     return {
       type: "snapshot",
-      settings: this.settings,
+      settings: {
+        enhancedStatusEnabled: this.settings.enhancedStatusEnabled,
+        ...(this.settings.codexHome ? { codexHome: this.settings.codexHome } : {})
+      },
       health: this.health,
-      hookCount: this.hookCount,
-      codexHome: this.codexHome,
       version: PLUGIN_VERSION
     };
   }
@@ -159,15 +199,16 @@ export class StatusCoordinator {
       await this.hookServer?.start();
       await this.reinstallHooks();
     } else {
-      await this.hookServer?.stop();
-      const cleanup = await this.hookManager?.uninstall(process.cwd());
+      const cleanup = await this.uninstallHooks();
       this.hookCount = 0;
       this.updateHealth({
         hooks: "disabled",
         restartRequired: true,
         ...(cleanup?.manualCleanupRequired
           ? { message: "A modified status hook was disabled but left in hooks.json for manual review" }
-          : {})
+          : cleanup?.trustCleanupFailed
+            ? { message: "Hook definitions were removed, but their trust state could not be cleared" }
+            : {})
       });
     }
     await this.persistNow();
@@ -175,16 +216,37 @@ export class StatusCoordinator {
   }
 
   async setCodexHome(codexHome?: string): Promise<void> {
+    const previousHome = this.codexHome;
     const normalized = codexHome?.trim();
-    if (normalized) this.settings = { ...this.settings, codexHome: normalized };
-    else {
-      const settings = { ...this.settings };
-      delete settings.codexHome;
-      this.settings = settings;
+    const nextSettings = { ...this.settings };
+    if (normalized) nextSettings.codexHome = normalized;
+    else delete nextSettings.codexHome;
+    const nextHome = resolveCodexHome(nextSettings);
+    if (nextHome === previousHome) {
+      this.settings = nextSettings;
+      await this.persistNow();
+      return;
     }
+
+    const wasStarted = this.started;
+    if (wasStarted && this.settings.enhancedStatusEnabled) {
+      try {
+        const cleanup = await this.uninstallHooks();
+        if (cleanup?.manualCleanupRequired || cleanup?.trustCleanupFailed) {
+          this.log("Old CODEX_HOME hook cleanup requires manual review");
+        }
+      } catch (error) {
+        this.log(`Old CODEX_HOME hook cleanup failed: ${toErrorMessage(error)}`);
+      }
+    }
+    if (wasStarted) await this.stop();
+
+    this.threads.clear();
+    this.runtime.clear();
+    this.settings = { ...nextSettings, initialized: false, rolloutOffsets: {}, threadStates: {} };
+    this.health = initialHealth();
     await this.persistNow();
-    if (this.started) {
-      await this.stop();
+    if (wasStarted) {
       this.started = true;
       await this.startServices();
     }
@@ -214,8 +276,8 @@ export class StatusCoordinator {
     try {
       await this.appServer.start();
       await this.refreshCatalog();
-    } catch (error) {
-      this.updateHealth({ catalog: "disconnected", message: toErrorMessage(error) });
+    } catch {
+      this.updateHealth({ catalog: "disconnected", message: "Task catalog unavailable" });
     }
 
     this.rolloutWatcher = new RolloutWatcher(
@@ -226,13 +288,22 @@ export class StatusCoordinator {
       (offsets) => {
         this.settings = { ...this.settings, rolloutOffsets: offsets };
         this.schedulePersist();
+      },
+      () => {
+        this.updateHealth({
+          rolloutWatcher: "error",
+          message: "Rollout watcher could not read a session file"
+        });
       }
     );
     try {
       await this.rolloutWatcher.start();
       this.updateHealth({ rolloutWatcher: "watching" });
-    } catch (error) {
-      this.updateHealth({ rolloutWatcher: "error", message: toErrorMessage(error) });
+    } catch {
+      this.updateHealth({
+        rolloutWatcher: "error",
+        message: "Rollout watcher could not access the sessions directory"
+      });
     }
 
     if (this.settings.enhancedStatusEnabled) {
@@ -274,8 +345,8 @@ export class StatusCoordinator {
       }
       this.updateHealth({ catalog: "connected" });
       this.emitChange();
-    } catch (error) {
-      this.updateHealth({ catalog: "disconnected", message: toErrorMessage(error) });
+    } catch {
+      this.updateHealth({ catalog: "disconnected", message: "Task catalog refresh failed" });
     }
   }
 
@@ -317,6 +388,11 @@ export class StatusCoordinator {
     this.updateHealth({ hooks: result.status });
   }
 
+  private async uninstallHooks() {
+    await this.hookServer?.stop();
+    return this.hookManager?.uninstall(process.cwd());
+  }
+
   private updateHealth(patch: Partial<HealthSnapshot>): void {
     this.health = { ...this.health, ...patch };
     this.emitChange();
@@ -328,7 +404,11 @@ export class StatusCoordinator {
 
   private schedulePersist(): void {
     if (this.persistTimer) clearTimeout(this.persistTimer);
-    this.persistTimer = setTimeout(() => void this.persistNow(), 400);
+    this.persistTimer = setTimeout(() => {
+      void this.persistNow().catch((error: unknown) => {
+        this.log(`Settings persistence failed: ${toErrorMessage(error)}`);
+      });
+    }, 400);
   }
 
   private async persistNow(): Promise<void> {
@@ -342,13 +422,34 @@ export class StatusCoordinator {
   }
 }
 
-function normalizeSettings(settings: Partial<GlobalSettings>): GlobalSettings {
+function normalizeSettings(settings: unknown): GlobalSettings {
+  const result = settingsSchema.safeParse(settings);
+  const value = result.success ? result.data : {};
+  const threadStates = Object.fromEntries(
+    Object.entries(value.threadStates ?? {}).map(([threadId, state]) => [
+      threadId,
+      {
+        ...(state.lastCompletionId ? { lastCompletionId: state.lastCompletionId } : {}),
+        ...(state.lastAcknowledgedCompletionId
+          ? { lastAcknowledgedCompletionId: state.lastAcknowledgedCompletionId }
+          : {}),
+        ...(state.error === undefined ? {} : { error: state.error }),
+        ...(state.changedAt === undefined ? {} : { changedAt: state.changedAt })
+      }
+    ])
+  );
+  const rolloutOffsets = Object.fromEntries(
+    Object.entries(value.rolloutOffsets ?? {}).map(([filePath, cursor]) => [
+      filePath,
+      { offset: cursor.offset, ...(cursor.identity ? { identity: cursor.identity } : {}) }
+    ])
+  );
   return {
     assignmentMode: "recent",
-    enhancedStatusEnabled: settings.enhancedStatusEnabled ?? DEFAULT_SETTINGS.enhancedStatusEnabled,
-    initialized: settings.initialized ?? false,
-    threadStates: settings.threadStates ?? {},
-    rolloutOffsets: settings.rolloutOffsets ?? {},
-    ...(settings.codexHome?.trim() ? { codexHome: settings.codexHome.trim() } : {})
+    enhancedStatusEnabled: value.enhancedStatusEnabled ?? DEFAULT_SETTINGS.enhancedStatusEnabled,
+    initialized: value.initialized ?? false,
+    threadStates,
+    rolloutOffsets,
+    ...(value.codexHome?.trim() ? { codexHome: value.codexHome.trim() } : {})
   };
 }

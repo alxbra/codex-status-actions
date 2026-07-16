@@ -34,6 +34,8 @@ describe("status reducer", () => {
       timestamp: 2
     });
     expect(visualState(state)).toBe("error");
+    state = reduceRuntimeState(state, { type: "activity", threadId, timestamp: 3 });
+    expect(visualState(state)).toBe("error");
     state = reduceRuntimeState(state, { type: "acknowledged", threadId, timestamp: 3 });
     expect(visualState(state)).toBe("error");
     state = reduceRuntimeState(state, { type: "turn-started", threadId, turnId: "turn-2", timestamp: 4 });
@@ -50,5 +52,19 @@ describe("status reducer", () => {
     state = reduceRuntimeState(state, { type: "turn-started", threadId, turnId: "turn-2", timestamp: 2 });
     expect(state.lastAcknowledgedCompletionId).toBe("turn-1");
     expect(visualState(state)).toBe("working");
+  });
+
+  it("recovers active work from activity and ignores stale events", () => {
+    let state = reduceRuntimeState(initialRuntimeState(), {
+      type: "activity",
+      threadId,
+      timestamp: 10
+    });
+    expect(visualState(state)).toBe("working");
+
+    state = reduceRuntimeState(state, { type: "turn-error", threadId, timestamp: 20 });
+    state = reduceRuntimeState(state, { type: "activity", threadId, timestamp: 15 });
+    expect(visualState(state)).toBe("error");
+    expect(state.changedAt).toBe(20);
   });
 });

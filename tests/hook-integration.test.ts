@@ -1,16 +1,25 @@
-import { chmod, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { spawn } from "node:child_process";
+import { request } from "node:http";
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { AppServerClient } from "../src/codex/app-server-client";
 import { HookManager } from "../src/hooks/hook-manager";
 import { HookServer } from "../src/hooks/hook-server";
 import type { HookEnvelope } from "../src/types";
+import { waitFor } from "./helpers";
 
 const threadId = "019f6b6d-644d-7701-8858-9da6837aaaaa";
+const servers = new Set<HookServer>();
+
+afterEach(async () => {
+  const tracked = [...servers];
+  servers.clear();
+  await Promise.all(tracked.map((server) => server.stop()));
+});
 
 describe("Codex hook integration", () => {
   it("preserves existing hooks and forwards only the reduced envelope", async () => {
@@ -23,6 +32,9 @@ describe("Codex hook integration", () => {
     );
     const manager = new HookManager(codexHome, new AppServerClient("/bin/false"));
     await manager.install();
+    await chmod(manager.hooksPath, 0o644);
+    expect(await manager.install()).toBe(false);
+    expect((await stat(manager.hooksPath)).mode & 0o777).toBe(0o600);
     const config = JSON.parse(await readFile(path.join(codexHome, "hooks.json"), "utf8")) as {
       hooks: { PreToolUse: unknown[]; PermissionRequest: unknown[]; PostToolUse: unknown[] };
     };
@@ -31,9 +43,11 @@ describe("Codex hook integration", () => {
     expect(config.hooks.PostToolUse).toHaveLength(1);
 
     let received: HookEnvelope | undefined;
-    const server = new HookServer(codexHome, (envelope) => {
-      received = envelope;
-    });
+    const server = trackServer(
+      new HookServer(codexHome, (envelope) => {
+        received = envelope;
+      })
+    );
     await server.start();
     await runHelper(manager.helperPath, {
       session_id: threadId,
@@ -43,7 +57,7 @@ describe("Codex hook integration", () => {
       tool_input: { command: "TOP SECRET COMMAND" },
       questions: ["TOP SECRET QUESTION"]
     });
-    await waitFor(() => Boolean(received));
+    await waitFor(() => Boolean(received), "Timed out waiting for hook event");
     expect(received).toMatchObject({
       version: 1,
       event: "permission-requested",
@@ -52,7 +66,6 @@ describe("Codex hook integration", () => {
     });
     expect(typeof received?.timestamp).toBe("number");
     expect(JSON.stringify(received)).not.toContain("TOP SECRET");
-    await server.stop();
   });
 
   it("exits successfully when Stream Deck is unavailable", async () => {
@@ -89,7 +102,32 @@ describe("Codex hook integration", () => {
     expect(result.manualCleanupRequired).toBe(true);
     expect(after.hooks.PermissionRequest).toHaveLength(1);
   });
+
+  it("rejects hook envelopes with fields outside the allow-list", async () => {
+    const codexHome = await mkdtemp(path.join(tmpdir(), "csa-hooks-"));
+    let received = false;
+    const server = trackServer(
+      new HookServer(codexHome, () => {
+        received = true;
+      })
+    );
+    await Promise.all([server.start(), server.start()]);
+    const status = await postEnvelope(server.socketPath, {
+      version: 1,
+      event: "question-opened",
+      threadId,
+      timestamp: Date.now(),
+      prompt: "must not be accepted"
+    });
+    expect(status).toBe(400);
+    expect(received).toBe(false);
+  });
 });
+
+function trackServer(server: HookServer): HookServer {
+  servers.add(server);
+  return server;
+}
 
 async function runHelper(helperPath: string, payload: object): Promise<number | null> {
   await chmod(helperPath, 0o700);
@@ -101,10 +139,22 @@ async function runHelper(helperPath: string, payload: object): Promise<number | 
   });
 }
 
-async function waitFor(predicate: () => boolean): Promise<void> {
-  const timeout = Date.now() + 2_000;
-  while (!predicate()) {
-    if (Date.now() > timeout) throw new Error("Timed out waiting for hook event");
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
+function postEnvelope(socketPath: string, payload: object): Promise<number | undefined> {
+  const body = JSON.stringify(payload);
+  return new Promise((resolve, reject) => {
+    const message = request(
+      {
+        socketPath,
+        path: "/hook",
+        method: "POST",
+        headers: { "content-type": "application/json", "content-length": Buffer.byteLength(body) }
+      },
+      (response) => {
+        response.resume();
+        response.once("end", () => resolve(response.statusCode));
+      }
+    );
+    message.once("error", reject);
+    message.end(body);
+  });
 }
