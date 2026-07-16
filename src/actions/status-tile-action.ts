@@ -13,7 +13,7 @@ import {
 } from "@elgato/streamdeck";
 import type { JsonValue } from "@elgato/utils";
 
-import { assignMostRecent, type TilePosition } from "../assignment";
+import { assignInOrder, type TilePosition } from "../assignment";
 import { ACTION_UUID, DOUBLE_TAP_MS } from "../constants";
 import { activateCodexAndOpenTask, isCodexForeground, openTaskInBackground } from "../navigation";
 import { renderEmptyTile, renderIntegrationError, renderStatusTile } from "../render";
@@ -182,7 +182,7 @@ export class StatusTileAction extends SingletonAction<ActionSettings> {
 
   private async renderAll(): Promise<void> {
     const coordinator = this.coordinator;
-    const assignments = assignMostRecent(this.positions.values(), coordinator?.snapshot().values() ?? []);
+    const assignments = assignInOrder(this.positions.values(), coordinator?.snapshot().values() ?? []);
 
     const results = await Promise.allSettled(
       [...this.visibleActions].map(async ([contextId, key]) => {
