@@ -9,19 +9,12 @@ import { AppServerClient } from "../src/codex/app-server-client";
 const clients: AppServerClient[] = [];
 
 afterEach(async () => {
-  await Promise.all(clients.map((client) => client.stop()));
-  clients.length = 0;
+  await Promise.all(clients.splice(0).map((client) => client.stop()));
 });
 
 describe("app-server client", () => {
   it("initializes, lists task metadata, and reads hook trust", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "fake-codex-"));
-    const executable = path.join(root, "codex");
-    await writeFile(executable, fakeCodexScript());
-    await chmod(executable, 0o700);
-
-    const client = new AppServerClient(executable);
-    clients.push(client);
+    const client = await createClient(fakeCodexScript(), "fake-codex-");
     const threads = await client.listThreads();
     expect(threads).toEqual([
       expect.objectContaining({
@@ -37,13 +30,7 @@ describe("app-server client", () => {
   });
 
   it("rejects pending requests immediately when stopped", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "fake-codex-stop-"));
-    const executable = path.join(root, "codex");
-    await writeFile(executable, unresponsiveCodexScript());
-    await chmod(executable, 0o700);
-
-    const client = new AppServerClient(executable);
-    clients.push(client);
+    const client = await createClient(unresponsiveCodexScript(), "fake-codex-stop-");
     await client.start();
     const pending = expect(client.listThreads()).rejects.toThrow("app-server stopped");
     await new Promise((resolve) => setImmediate(resolve));
@@ -52,13 +39,7 @@ describe("app-server client", () => {
   });
 
   it("ignores exit events from a superseded process", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "fake-codex-restart-"));
-    const executable = path.join(root, "codex");
-    await writeFile(executable, fakeCodexScript());
-    await chmod(executable, 0o700);
-
-    const client = new AppServerClient(executable);
-    clients.push(client);
+    const client = await createClient(fakeCodexScript(), "fake-codex-restart-");
     await client.start();
     let disconnections = 0;
     client.on("disconnected", () => disconnections++);
@@ -71,6 +52,16 @@ describe("app-server client", () => {
     expect(await client.listThreads()).toHaveLength(1);
   });
 });
+
+async function createClient(script: string, prefix: string): Promise<AppServerClient> {
+  const root = await mkdtemp(path.join(tmpdir(), prefix));
+  const executable = path.join(root, "codex");
+  await writeFile(executable, script);
+  await chmod(executable, 0o700);
+  const client = new AppServerClient(executable);
+  clients.push(client);
+  return client;
+}
 
 function fakeCodexScript(): string {
   return `#!/bin/sh
