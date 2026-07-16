@@ -15,7 +15,7 @@ describe("property inspector", () => {
     expect(text).toContain("Task content is not sent off-device or logged by the plugin.");
     expect(html).not.toContain('id="appearance-mode"');
     expect(html).toContain('<select id="enhanced-status"');
-    expect(html).toMatch(/id="assignment-mode"[\s\S]*?disabled/);
+    expect(html).toMatch(/<select\b(?=[^>]*\bid="assignment-mode")(?=[^>]*\bdisabled\b)[^>]*>/);
     expect(html).toContain("<h2>General</h2>");
     expect(html).toContain("<h2>Status detection</h2>");
     expect(text).toContain(
