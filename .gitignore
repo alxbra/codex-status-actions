@@ -1,0 +1,8 @@
+node_modules/
+release/
+*.streamDeckPlugin
+com.abrakazinga.codex-status-actions.sdPlugin/bin/
+*.log
+.DS_Store
+.idea/
+.vscode/

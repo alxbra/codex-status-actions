@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 144 144">
+  <rect width="144" height="144" fill="#F1F1ED"/>
+  <circle cx="72" cy="56" r="17" fill="none" stroke="#111315" stroke-width="7"/>
+  <text x="72" y="106" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#111315">NO TASK</text>
+</svg>

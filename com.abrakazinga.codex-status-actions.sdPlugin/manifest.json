@@ -1,0 +1,44 @@
+{
+  "Name": "Codex: Status & Actions",
+  "Version": "0.1.0.0",
+  "Author": "abrakazinga",
+  "Actions": [
+    {
+      "Name": "Codex Status",
+      "UUID": "com.abrakazinga.codex-status-actions.status",
+      "Icon": "imgs/actions/status/icon",
+      "Tooltip": "Shows one of your most recently updated local Codex tasks.",
+      "PropertyInspectorPath": "ui/property-inspector.html",
+      "Controllers": [
+        "Keypad"
+      ],
+      "States": [
+        {
+          "Image": "imgs/actions/status/key",
+          "TitleAlignment": "middle",
+          "ShowTitle": false
+        }
+      ]
+    }
+  ],
+  "Category": "Codex: Status & Actions",
+  "CategoryIcon": "imgs/plugin/category-icon",
+  "CodePath": "bin/plugin.js",
+  "Description": "Monitor OpenAI Codex from your Stream Deck. Unofficial community integration.",
+  "Icon": "imgs/plugin/marketplace",
+  "SDKVersion": 3,
+  "Software": {
+    "MinimumVersion": "7.1"
+  },
+  "OS": [
+    {
+      "Platform": "mac",
+      "MinimumVersion": "12"
+    }
+  ],
+  "Nodejs": {
+    "Version": "20",
+    "Debug": "enabled"
+  },
+  "UUID": "com.abrakazinga.codex-status-actions"
+}

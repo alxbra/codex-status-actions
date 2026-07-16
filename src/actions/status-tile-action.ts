@@ -1,0 +1,249 @@
+import {
+  action,
+  default as streamDeck,
+  type KeyAction,
+  type KeyDownEvent,
+  type KeyUpEvent,
+  type PropertyInspectorDidAppearEvent,
+  type PropertyInspectorDidDisappearEvent,
+  type SendToPluginEvent,
+  SingletonAction,
+  type WillAppearEvent,
+  type WillDisappearEvent
+} from "@elgato/streamdeck";
+
+import { assignMostRecent, type TilePosition } from "../assignment";
+import { ACTION_UUID, DOUBLE_TAP_MS } from "../constants";
+import { activateCodexAndOpenTask, isCodexForeground, openTaskInBackground } from "../navigation";
+import { renderEmptyTile, renderIntegrationError, renderStatusTile } from "../render";
+import type { StatusCoordinator } from "../status/coordinator";
+import type { PropertyInspectorCommand, ThreadStatusSnapshot } from "../types";
+import { toErrorMessage } from "../util";
+
+type ActionSettings = Record<string, never>;
+
+interface PressCapture {
+  threadId?: string;
+  foreground: Promise<boolean>;
+}
+
+interface PreviousTap {
+  at: number;
+  threadId: string;
+  wasForeground: boolean;
+}
+
+@action({ UUID: ACTION_UUID })
+export class StatusTileAction extends SingletonAction<ActionSettings> {
+  private coordinator?: StatusCoordinator;
+  private unsubscribe?: () => void;
+  private readonly visibleActions = new Map<string, KeyAction<ActionSettings>>();
+  private readonly positions = new Map<string, TilePosition>();
+  private readonly renderedThreads = new Map<string, ThreadStatusSnapshot>();
+  private readonly renderedImages = new Map<string, string>();
+  private readonly presses = new Map<string, PressCapture>();
+  private readonly previousTaps = new Map<string, PreviousTap>();
+  private inspectorContextId: string | undefined;
+
+  attach(coordinator: StatusCoordinator): void {
+    this.unsubscribe?.();
+    this.coordinator = coordinator;
+    this.unsubscribe = coordinator.subscribe(() => {
+      void this.renderAll();
+      void this.sendInspectorSnapshot();
+    });
+    void this.renderAll();
+  }
+
+  override onWillAppear(event: WillAppearEvent<ActionSettings>): void {
+    if (!event.action.isKey()) return;
+    const coordinates = event.action.coordinates;
+    if (!coordinates) return;
+    this.visibleActions.set(event.action.id, event.action);
+    this.positions.set(event.action.id, {
+      contextId: event.action.id,
+      deviceId: event.action.device.id,
+      row: coordinates.row,
+      column: coordinates.column
+    });
+    void this.renderAll();
+  }
+
+  override onWillDisappear(event: WillDisappearEvent<ActionSettings>): void {
+    this.visibleActions.delete(event.action.id);
+    this.positions.delete(event.action.id);
+    this.renderedThreads.delete(event.action.id);
+    this.renderedImages.delete(event.action.id);
+    this.presses.delete(event.action.id);
+    this.previousTaps.delete(event.action.id);
+    void this.renderAll();
+  }
+
+  override onKeyDown(event: KeyDownEvent<ActionSettings>): void {
+    const thread = this.renderedThreads.get(event.action.id);
+    this.presses.set(event.action.id, {
+      ...(thread ? { threadId: thread.thread.id } : {}),
+      foreground: isCodexForeground()
+    });
+  }
+
+  override async onKeyUp(event: KeyUpEvent<ActionSettings>): Promise<void> {
+    const contextId = event.action.id;
+    const capture = this.presses.get(contextId);
+    this.presses.delete(contextId);
+    const threadId = capture?.threadId;
+    if (!threadId) {
+      await event.action.showAlert();
+      return;
+    }
+
+    const wasForeground = await capture.foreground;
+    const now = Date.now();
+    const previous = this.previousTaps.get(contextId);
+    const isSecondTap =
+      previous &&
+      previous.threadId === threadId &&
+      now - previous.at <= DOUBLE_TAP_MS &&
+      !previous.wasForeground;
+
+    try {
+      if (isSecondTap) {
+        this.previousTaps.delete(contextId);
+        await activateCodexAndOpenTask(threadId);
+        this.coordinator?.acknowledge(threadId);
+      } else {
+        this.previousTaps.set(contextId, { at: now, threadId, wasForeground });
+        await openTaskInBackground(threadId);
+        if (wasForeground) this.coordinator?.acknowledge(threadId);
+      }
+      this.coordinator?.markNavigation(true);
+    } catch (error) {
+      this.coordinator?.markNavigation(false, toErrorMessage(error));
+      await event.action.showAlert();
+    }
+  }
+
+  override onPropertyInspectorDidAppear(event: PropertyInspectorDidAppearEvent<ActionSettings>): void {
+    this.inspectorContextId = event.action.id;
+    void this.sendInspectorSnapshot();
+  }
+
+  override onPropertyInspectorDidDisappear(event: PropertyInspectorDidDisappearEvent<ActionSettings>): void {
+    if (this.inspectorContextId === event.action.id) this.inspectorContextId = undefined;
+  }
+
+  override async onSendToPlugin(
+    event: SendToPluginEvent<import("@elgato/utils").JsonValue, ActionSettings>
+  ): Promise<void> {
+    const coordinator = this.coordinator;
+    if (!coordinator) return;
+    const command = parseCommand(event.payload);
+    if (!command) {
+      await streamDeck.ui.sendToPropertyInspector({
+        type: "error",
+        message: "Unknown property inspector command"
+      });
+      return;
+    }
+
+    try {
+      switch (command.type) {
+        case "refresh":
+          break;
+        case "trust-hooks":
+          await coordinator.trustHooks();
+          break;
+        case "reinstall-hooks":
+          await coordinator.reinstallHooks();
+          break;
+        case "set-enhanced-status":
+          await coordinator.setEnhancedStatus(command.enabled);
+          break;
+        case "set-codex-home":
+          await coordinator.setCodexHome(command.path);
+          break;
+        case "copy-diagnostics":
+          await streamDeck.ui.sendToPropertyInspector({
+            type: "diagnostics",
+            text: coordinator.diagnostics()
+          });
+          return;
+      }
+      await streamDeck.ui.sendToPropertyInspector(coordinator.propertySnapshot() as never);
+    } catch (error) {
+      await streamDeck.ui.sendToPropertyInspector({ type: "error", message: toErrorMessage(error) });
+    }
+  }
+
+  private async renderAll(): Promise<void> {
+    const coordinator = this.coordinator;
+    const assignments = assignMostRecent(this.positions.values(), coordinator?.snapshot().values() ?? []);
+    this.renderedThreads.clear();
+
+    const ranks = rankByContext(this.positions.values());
+    await Promise.all(
+      [...this.visibleActions].map(async ([contextId, key]) => {
+        const rank = ranks.get(contextId) ?? 1;
+        const snapshot = assignments.get(contextId);
+        let image: string;
+        if (snapshot) {
+          this.renderedThreads.set(contextId, snapshot);
+          image = renderStatusTile(snapshot.state, snapshot.thread.title, rank);
+        } else if (coordinator?.unavailable) {
+          image = renderIntegrationError(rank);
+        } else {
+          image = renderEmptyTile(rank);
+        }
+        if (this.renderedImages.get(contextId) === image) return;
+        this.renderedImages.set(contextId, image);
+        await key.setImage(image);
+      })
+    );
+  }
+
+  private async sendInspectorSnapshot(): Promise<void> {
+    const contextId = this.inspectorContextId;
+    const coordinator = this.coordinator;
+    if (!contextId || !coordinator) return;
+    if (!this.visibleActions.has(contextId)) return;
+    await streamDeck.ui.sendToPropertyInspector(coordinator.propertySnapshot() as never);
+  }
+}
+
+function rankByContext(tiles: Iterable<TilePosition>): Map<string, number> {
+  const grouped = new Map<string, TilePosition[]>();
+  for (const tile of tiles) {
+    const values = grouped.get(tile.deviceId) ?? [];
+    values.push(tile);
+    grouped.set(tile.deviceId, values);
+  }
+  const ranks = new Map<string, number>();
+  for (const values of grouped.values()) {
+    values.sort((a, b) => a.row - b.row || a.column - b.column || a.contextId.localeCompare(b.contextId));
+    values.forEach((tile, index) => ranks.set(tile.contextId, index + 1));
+  }
+  return ranks;
+}
+
+function parseCommand(payload: unknown): PropertyInspectorCommand | undefined {
+  if (!payload || typeof payload !== "object" || !("type" in payload) || typeof payload.type !== "string") {
+    return undefined;
+  }
+  switch (payload.type) {
+    case "refresh":
+    case "trust-hooks":
+    case "reinstall-hooks":
+    case "copy-diagnostics":
+      return { type: payload.type };
+    case "set-enhanced-status":
+      if (typeof (payload as { enabled?: unknown }).enabled !== "boolean") return undefined;
+      return { type: payload.type, enabled: Boolean((payload as { enabled?: unknown }).enabled) };
+    case "set-codex-home": {
+      const value = (payload as { path?: unknown }).path;
+      if (typeof value !== "string") return undefined;
+      return value ? { type: payload.type, path: value } : { type: payload.type };
+    }
+    default:
+      return undefined;
+  }
+}

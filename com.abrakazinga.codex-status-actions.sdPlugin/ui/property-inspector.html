@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Codex Status Settings</title>
+    <link rel="stylesheet" href="property-inspector.css" />
+  </head>
+  <body>
+    <main class="panel">
+      <header class="masthead">
+        <div class="mark" aria-hidden="true">
+          <i class="blue"></i><i class="green"></i><i class="orange"></i><i class="red"></i>
+        </div>
+        <div>
+          <p class="eyebrow">UNOFFICIAL COMMUNITY INTEGRATION</p>
+          <h1>CODEX STATUS</h1>
+        </div>
+      </header>
+
+      <section class="readout">
+        <span>ASSIGNMENT</span>
+        <strong>MOST RECENT</strong>
+        <small>Visible keys are ranked top-left to bottom-right.</small>
+      </section>
+
+      <section class="control-block">
+        <label class="toggle-row" for="enhanced-status">
+          <span>
+            <strong>ENHANCED STATUS</strong>
+            <small>Approval and question detection through local Codex hooks.</small>
+          </span>
+          <input id="enhanced-status" type="checkbox" checked />
+          <span class="toggle" aria-hidden="true"></span>
+        </label>
+        <div id="restart-notice" class="notice hidden">
+          <strong>RESTART CODEX</strong>
+          Hook configuration changed. Restart Codex once to activate it.
+        </div>
+        <button id="trust-hooks" class="button primary" type="button">TRUST 3 LOCAL STATUS HOOKS</button>
+        <button id="reinstall-hooks" class="button secondary" type="button">REINSTALL HOOKS</button>
+      </section>
+
+      <section class="health" aria-label="Connection health">
+        <h2>SYSTEM CHECK</h2>
+        <div class="health-row"><span>CODEX BINARY</span><output id="health-binary">CHECKING</output></div>
+        <div class="health-row"><span>TASK CATALOG</span><output id="health-catalog">CONNECTING</output></div>
+        <div class="health-row">
+          <span>ROLLOUT WATCHER</span><output id="health-rollout">STARTING</output>
+        </div>
+        <div class="health-row"><span>STATUS HOOKS</span><output id="health-hooks">MISSING</output></div>
+        <div class="health-row"><span>NAVIGATION</span><output id="health-navigation">UNCHECKED</output></div>
+      </section>
+
+      <section class="path-block">
+        <label for="codex-home">CODEX_HOME</label>
+        <div class="path-input">
+          <input id="codex-home" type="text" spellcheck="false" placeholder="~/.codex" />
+          <button id="apply-home" type="button" aria-label="Apply Codex home">SET</button>
+        </div>
+        <button id="reset-home" class="text-button" type="button">USE DEFAULT</button>
+      </section>
+
+      <footer>
+        <button id="copy-diagnostics" class="text-button" type="button">COPY SAFE DIAGNOSTICS</button>
+        <span id="version">v0.1.0</span>
+      </footer>
+      <div id="toast" role="status" aria-live="polite"></div>
+    </main>
+    <script src="property-inspector.js"></script>
+  </body>
+</html>
