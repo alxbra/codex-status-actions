@@ -35,9 +35,18 @@ describe("property inspector", () => {
         ) => void;
       }
     ).connectElgatoStreamDeckSocket;
-    connect(1234, "correct-context", "registerPropertyInspector", "{}", '{"action":"status"}');
+    connect(
+      1234,
+      "property-inspector-id",
+      "registerPropertyInspector",
+      "{}",
+      '{"action":"status","context":"correct-context"}'
+    );
     sockets[0]?.open();
 
+    expect(sockets[0]?.messages).toContain(
+      JSON.stringify({ event: "registerPropertyInspector", uuid: "property-inspector-id" })
+    );
     expect(sockets[0]?.messages).toContain(
       JSON.stringify({
         action: "status",
