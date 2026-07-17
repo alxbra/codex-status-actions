@@ -19,6 +19,9 @@ describe("property inspector", () => {
     expect(html).toContain("<h2>General</h2>");
     expect(html).toContain("<h2>Status detection</h2>");
     expect(text).toContain("Optional, but recommended. Uses local hooks to show when Codex needs approval.");
+    expect(html).toMatch(
+      /<div\b(?=[^>]*\bid="restart-notice")(?=[^>]*\brole="status")(?=[^>]*\baria-live="polite")[^>]*>/
+    );
     expect(html).not.toContain("Trust 3");
     expect(html).not.toContain("<h2>SETTINGS</h2>");
     expect(html).toContain("Advanced");
