@@ -24,4 +24,38 @@ describe("global settings store", () => {
     await Promise.all([firstPersist, secondPersist]);
     expect(writes.map(({ codexHome }) => codexHome)).toEqual(["/first", "/second"]);
   });
+
+  it("normalizes a valid dictation shortcut and rejects unsafe values", () => {
+    const store = new GlobalSettingsStore(
+      { dictationShortcut: { key: " d ", modifiers: ["command", "control", "command"] } },
+      () => Promise.resolve()
+    );
+    expect(store.current.dictationShortcut).toEqual({
+      key: "D",
+      modifiers: ["control", "command"]
+    });
+
+    store.replace({
+      dictationShortcut: { key: 'D" & do shell script "bad', modifiers: ["command"] }
+    });
+    expect(store.current.dictationShortcut).toBeUndefined();
+  });
+
+  it("discards only a malformed shortcut while preserving other settings", () => {
+    const store = new GlobalSettingsStore(
+      {
+        enhancedStatusEnabled: false,
+        codexHome: "/custom",
+        dictationShortcut: "invalid",
+        threadOrder: ["thread-1"]
+      },
+      () => Promise.resolve()
+    );
+    expect(store.current).toMatchObject({
+      enhancedStatusEnabled: false,
+      codexHome: "/custom",
+      threadOrder: ["thread-1"]
+    });
+    expect(store.current.dictationShortcut).toBeUndefined();
+  });
 });
