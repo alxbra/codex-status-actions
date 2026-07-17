@@ -30,12 +30,7 @@ const rolloutCursorSchema = z
 const settingsSchema = z.object({
   enhancedStatusEnabled: z.boolean().optional(),
   codexHome: z.string().optional(),
-  dictationShortcut: z
-    .object({
-      key: z.string(),
-      modifiers: z.array(z.enum(["command", "control", "option", "shift"]))
-    })
-    .optional(),
+  dictationShortcut: z.unknown().optional(),
   initialized: z.boolean().optional(),
   threadOrder: z.array(z.string()).optional(),
   threadStates: z.record(z.string(), persistedThreadStateSchema).optional(),

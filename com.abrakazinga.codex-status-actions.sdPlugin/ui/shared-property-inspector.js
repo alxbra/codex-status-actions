@@ -3,16 +3,20 @@ globalThis.propertyInspectorHost = (() => {
   let action;
   let context;
   let toastTimer;
+  let pendingEvents = [];
 
   function connect(port, uuid, registerEvent, info, rawActionInfo, handlers) {
     void info;
     const actionInfo = JSON.parse(rawActionInfo);
     action = actionInfo.action;
     context = uuid;
+    pendingEvents = [];
     handlers.initialize?.(actionInfo);
     socket = new WebSocket(`ws://127.0.0.1:${port}`);
     socket.addEventListener("open", () => {
       socket.send(JSON.stringify({ event: registerEvent, uuid }));
+      for (const message of pendingEvents) socket.send(message);
+      pendingEvents = [];
       handlers.onOpen();
     });
     socket.addEventListener("message", ({ data }) => {
@@ -30,8 +34,10 @@ globalThis.propertyInspectorHost = (() => {
   }
 
   function sendEvent(event, payload) {
-    if (!socket || socket.readyState !== WebSocket.OPEN) return;
-    socket.send(JSON.stringify({ action, event, context, payload }));
+    if (!socket) return;
+    const message = JSON.stringify({ action, event, context, payload });
+    if (socket.readyState === WebSocket.CONNECTING) pendingEvents.push(message);
+    else if (socket.readyState === WebSocket.OPEN) socket.send(message);
   }
 
   function applyTheme(theme) {

@@ -40,4 +40,22 @@ describe("global settings store", () => {
     });
     expect(store.current.dictationShortcut).toBeUndefined();
   });
+
+  it("discards only a malformed shortcut while preserving other settings", () => {
+    const store = new GlobalSettingsStore(
+      {
+        enhancedStatusEnabled: false,
+        codexHome: "/custom",
+        dictationShortcut: "invalid",
+        threadOrder: ["thread-1"]
+      },
+      () => Promise.resolve()
+    );
+    expect(store.current).toMatchObject({
+      enhancedStatusEnabled: false,
+      codexHome: "/custom",
+      threadOrder: ["thread-1"]
+    });
+    expect(store.current.dictationShortcut).toBeUndefined();
+  });
 });

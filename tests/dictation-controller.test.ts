@@ -116,6 +116,22 @@ describe("dictation controller", () => {
       permission: "denied",
       lastError: "Permission denied"
     });
+
+    platform.shortcutFailure = undefined;
+    await controller.toggle("second");
+    expect(platform.calls).toEqual(["activate", "shortcut", "activate", "shortcut"]);
+  });
+
+  it("preserves recording uncertainty when a start shortcut may have been delivered", async () => {
+    const { controller, platform } = setup();
+    platform.shortcutFailure = new DictationPlatformError("command-failed", "Shortcut failed");
+
+    await expect(controller.start("first")).rejects.toThrow("Shortcut failed");
+    platform.shortcutFailure = undefined;
+    await controller.toggle("second");
+
+    expect(platform.calls).toEqual(["activate", "shortcut", "shortcut"]);
+    expect(controller.snapshot().state).toBe("idle");
   });
 
   it("retries stopping instead of inverting state after an uncertain stop failure", async () => {

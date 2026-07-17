@@ -1,5 +1,6 @@
 let settings = { mode: "hold" };
 let shortcut;
+let isRecordingShortcut = false;
 
 function connectElgatoStreamDeckSocket(port, uuid, registerEvent, info, rawActionInfo) {
   propertyInspectorHost.connect(port, uuid, registerEvent, info, rawActionInfo, {
@@ -46,6 +47,7 @@ function renderSettings() {
 }
 
 function renderShortcut(recording = false) {
+  isRecordingShortcut = recording;
   const recorder = document.querySelector("#shortcut-recorder");
   recorder.classList.toggle("recording", recording);
   recorder.querySelector("kbd").textContent = recording
@@ -100,6 +102,7 @@ document.querySelector("#shortcut-recorder").addEventListener("click", () => {
 });
 document.querySelector("#shortcut-recorder").addEventListener("blur", () => renderShortcut());
 document.querySelector("#shortcut-recorder").addEventListener("keydown", (event) => {
+  if (!isRecordingShortcut) return;
   event.preventDefault();
   if (event.key === "Escape") {
     renderShortcut();

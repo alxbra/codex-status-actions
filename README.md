@@ -74,7 +74,7 @@ Status is assembled locally from:
 
 Usage is read through the official `account/rateLimits/read` app-server method. The plugin does not open `auth.json`, retain authentication tokens, or call a private usage endpoint.
 
-Dictation does not send audio through the plugin. It stores only the shortcut key and modifiers, while Codex handles microphone capture, transcription, and the editable composer text.
+Dictation does not send audio through the plugin. It stores the shortcut key and modifiers globally and the interaction mode per action, while Codex handles microphone capture, transcription, and the editable composer text.
 
 The hook helper receives Codex's hook input, extracts only the task ID, turn ID, and event name in memory, and forwards that reduced object over a permission-restricted Unix socket. It never forwards or logs prompts, questions, command text, tool input, transcripts, or file paths. When Stream Deck is unavailable, the helper exits successfully so it cannot block Codex.
 

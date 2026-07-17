@@ -108,15 +108,23 @@ describe("Codex hook integration", () => {
   });
 
   it("drops oversized hook input without blocking Codex", async () => {
-    const codexHome = await mkdtemp(path.join(tmpdir(), "codex-hooks-oversized-"));
+    const codexHome = await mkdtemp("/tmp/csa-oversized-");
     const manager = new HookManager(codexHome, new AppServerClient("/bin/false"));
     await manager.install();
+    let received = false;
+    const server = trackServer(
+      new HookServer(codexHome, () => {
+        received = true;
+      })
+    );
+    await server.start();
     const code = await runHelper(manager.helperPath, {
       session_id: threadId,
       hook_event_name: "PermissionRequest",
       prompt: "x".repeat(5_000)
     });
     expect(code).toBe(0);
+    expect(received).toBe(false);
   });
 
   it("does not remove an owned declaration after manual modification", async () => {

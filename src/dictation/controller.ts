@@ -153,16 +153,19 @@ export class DictationController {
     try {
       await this.platform.activateCodex();
       this.availability = "available";
-      await this.platform.emitShortcut(shortcut);
-      this.permission = "granted";
       this.ownerId = ownerId;
       this.activeShortcut = shortcut;
       this.mayBeRecording = true;
+      await this.platform.emitShortcut(shortcut);
+      this.permission = "granted";
       this.lastError = undefined;
       this.setState("recording");
     } catch (error) {
       this.classify(error);
-      this.fail(error, false);
+      const deliveryIsUncertain =
+        this.mayBeRecording &&
+        (!(error instanceof DictationPlatformError) || error.code !== "permission-denied");
+      this.fail(error, deliveryIsUncertain);
       throw error;
     }
   }

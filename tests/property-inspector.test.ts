@@ -177,8 +177,9 @@ describe("property inspector", () => {
       "{}",
       '{"action":"usage","context":"wrong-context","payload":{"settings":{}}}'
     );
-    sockets[0]?.open();
     element("#usage-window").dispatch("change", { target: { value: "week" } });
+    expect(sockets[0]?.messages).toEqual([]);
+    sockets[0]?.open();
 
     expect(sockets[0]?.messages).toContain(
       JSON.stringify({
@@ -244,6 +245,7 @@ describe("property inspector", () => {
     sockets[0]?.open();
 
     element("#dictation-mode").dispatch("change", { target: { value: "toggle" } });
+    element("#shortcut-recorder").dispatch("click", {});
     element("#shortcut-recorder").dispatch("keydown", {
       key: "∂",
       code: "KeyD",
@@ -317,8 +319,9 @@ class FakeElement {
 }
 
 class FakeWebSocket {
+  static readonly CONNECTING = 0;
   static readonly OPEN = 1;
-  readonly readyState = FakeWebSocket.OPEN;
+  readyState = FakeWebSocket.CONNECTING;
   readonly messages: string[] = [];
   private readonly listeners = new Map<string, (event: { data: string }) => void>();
 
@@ -331,6 +334,7 @@ class FakeWebSocket {
   }
 
   open(): void {
+    this.readyState = FakeWebSocket.OPEN;
     this.listeners.get("open")?.({ data: "" });
   }
 }
