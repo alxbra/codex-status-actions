@@ -26,7 +26,7 @@ describe("process runner", () => {
         )
       ).rejects.toMatchObject({ timedOut: true });
       await expect(access(ready)).resolves.toBeUndefined();
-      await sleep(500);
+      await sleep(1_000);
       await expect(access(marker)).rejects.toMatchObject({ code: "ENOENT" });
     } finally {
       await rm(directory, { force: true, recursive: true });
