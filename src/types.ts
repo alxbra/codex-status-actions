@@ -48,7 +48,6 @@ export interface ThreadRuntimeState {
 export interface ThreadStatusSnapshot {
   thread: ThreadRecord;
   state: ThreadVisualState;
-  changedAt: number;
 }
 
 export interface HookEnvelope {
